@@ -4,11 +4,9 @@ package org.vinni.servidor.gui;
 import org.vinni.dto.MiDatagrama;
 
 import javax.swing.*;
-import java.io.File;
 import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.SocketException;
+import java.net.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -18,6 +16,8 @@ import java.util.logging.Logger;
 public class PrincipalSrv extends JFrame {
 
     private final int PORT = 12345;
+
+    private final CopyOnWriteArrayList<InetSocketAddress> clientes = new CopyOnWriteArrayList<>();
 
     /**
      * Creates new form Principal1
@@ -41,11 +41,7 @@ public class PrincipalSrv extends JFrame {
 
         bIniciar.setFont(new java.awt.Font("Segoe UI", 0, 18)); // NOI18N
         bIniciar.setText("INICIAR SERVIDOR");
-        bIniciar.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                bIniciarActionPerformed(evt);
-            }
-        });
+        bIniciar.addActionListener(e -> iniciar());
         getContentPane().add(bIniciar);
         bIniciar.setBounds(150, 50, 250, 40);
 
@@ -53,7 +49,7 @@ public class PrincipalSrv extends JFrame {
         jLabel1.setForeground(new java.awt.Color(204, 0, 0));
         jLabel1.setText("SERVIDOR UDP : FERINK");
         getContentPane().add(jLabel1);
-        jLabel1.setBounds(150, 10, 160, 17);
+        jLabel1.setBounds(120, 10, 160, 17);
 
         mensajesTxt.setColumns(25);
         mensajesTxt.setRows(5);
@@ -67,48 +63,49 @@ public class PrincipalSrv extends JFrame {
         setLocationRelativeTo(null);
     }// </editor-fold>
 
+
     /**
      * @param args the command line arguments
      */
-    public static void main(String args[]) {
-        /* Create and display the form */
-        java.awt.EventQueue.invokeLater(new Runnable() {
-            public void run() {
-                new PrincipalSrv().setVisible(true);
-            }
-        });
-
-    }
-    private void bIniciarActionPerformed(java.awt.event.ActionEvent evt) {
-        iniciar();
-    }
 
     public void iniciar(){
         mensajesTxt.append("Servidor UDP iniciado en el puerto"+PORT+"\n");
-        byte[] buf = new byte[1000];
+        bIniciar.setEnabled(false);
 
         new Thread(() -> {
-            DatagramPacket dp = null;
-            try {
-                DatagramSocket socketudp = new DatagramSocket(PORT);
-                boolean inicio = true;
-                this.bIniciar.setEnabled(false);
-                while (inicio) {
-                    mensajesTxt.append("Escuchando ...\n ");
-                    dp = new DatagramPacket(buf, buf.length);
-                    socketudp.receive(dp);
-                    String elmensaje = new String(dp.getData());
-                    File f = new File("c:\\acasertvidor\\", "elarchivo.*");
-                    mensajesTxt.append("El mensaje recibido es " +
-                            elmensaje+"\n");
+            try(DatagramSocket socketudp = new DatagramSocket(PORT)) {
 
-                    DatagramPacket mensajeServ = MiDatagrama.crearDataG(dp.getAddress().getHostAddress(),
-                            dp.getPort(), "Mensaje recibido en el servidor");
-                    socketudp.send(mensajeServ);
-//                if (dp.getData()!= null){
-//                    inicio = false;
-//                    System.out.println(" Fin");
-//                }
+                byte[] buf = new byte[1024];
+
+                while (true) {
+                    // 1. Recibir paquete
+                    DatagramPacket dp = new DatagramPacket(buf, buf.length);
+                    socketudp.receive(dp);
+
+                    // 2. Registrar cliente si es nuevo
+                    InetSocketAddress origen = new InetSocketAddress(
+                            dp.getAddress(), dp.getPort());
+
+                    if (!clientes.contains(origen)) {
+                        clientes.add(origen);
+                        log("Nuevo cliente registrado: " + origen);
+                    }
+
+                    // 3. Extraer mensaje (solo los bytes usados)
+                    String mensaje = new String(dp.getData(), 0, dp.getLength());
+                    log("Recibido de " + origen + ": " + mensaje);
+
+                    // 4. Reenviar a TODOS los clientes registrados
+                    String broadcast = "[" + dp.getAddress().getHostAddress()
+                            + ":" + dp.getPort() + "] " + mensaje;
+
+                    for (InetSocketAddress cliente : clientes) {
+                        DatagramPacket salida = MiDatagrama.crearDataG(
+                                cliente.getAddress().getHostAddress(),
+                                cliente.getPort(),
+                                broadcast);
+                        socketudp.send(salida);
+                    }
 
                 }
 
@@ -118,13 +115,17 @@ public class PrincipalSrv extends JFrame {
                 Logger.getLogger(PrincipalSrv.class.getName()).log(Level.SEVERE, null, ex);
             }
         }).start();
-
     }
-    // Variables declaration - do not modify
-    private JButton bIniciar;
-    private JLabel jLabel1;
-    private JTextArea mensajesTxt;
+    private void log(String texto) {
+        SwingUtilities.invokeLater(() -> mensajesTxt.append(texto + "\n"));
+    }
+
+    public static void main(String[] args) {
+        java.awt.EventQueue.invokeLater(() -> new PrincipalSrv().setVisible(true));
+    }
+
+    private JButton    bIniciar;
+    private JLabel     jLabel1;
+    private JTextArea  mensajesTxt;
     private JScrollPane jScrollPane1;
-
-
 }

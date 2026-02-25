@@ -13,7 +13,9 @@ import java.util.logging.Logger;
  */
 public class PrincipalCli extends JFrame {
 
-    private final int PORT = 12345;
+    private final int PORT_SERVIDOR = 12345;
+    private DatagramSocket canal;
+
 
     /**
      * Creates new form Principal1
@@ -24,7 +26,33 @@ public class PrincipalCli extends JFrame {
         this.btEnviar.setEnabled(true);
         this.mensajesTxt.setEditable(false);
 
+    try {
+        canal = new DatagramSocket(); // puerto aleatorio asignado por el SO
+        escucharRespuestas();
+    } catch (SocketException ex) {
+        Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
     }
+}
+
+/** Hilo que escucha los mensajes broadcast que reenvía el servidor */
+private void escucharRespuestas() {
+    new Thread(() -> {
+        byte[] buf = new byte[1024];
+        while (true) {
+            DatagramPacket dp = new DatagramPacket(buf, buf.length);
+            try {
+                canal.receive(dp);
+                String msg = new String(dp.getData(), 0, dp.getLength());
+                // Mostrar en el área de mensajes de forma segura
+                SwingUtilities.invokeLater(() ->
+                        mensajesTxt.append(msg + "\n"));
+            } catch (IOException ex) {
+                Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
+                break;
+            }
+        }
+    }).start();
+}
 
     /**
      * This method is called from within the constructor to initialize the form.
@@ -73,11 +101,7 @@ public class PrincipalCli extends JFrame {
 
         btEnviar.setFont(new java.awt.Font("Verdana", 0, 14)); // NOI18N
         btEnviar.setText("Enviar");
-        btEnviar.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btEnviarActionPerformed(evt);
-            }
-        });
+        btEnviar.addActionListener(e -> enviarMensaje());
         getContentPane().add(btEnviar);
         btEnviar.setBounds(327, 160, 120, 27);
 
@@ -85,23 +109,11 @@ public class PrincipalCli extends JFrame {
         setLocationRelativeTo(null);
     }// </editor-fold>
 
-    private void btEnviarActionPerformed(java.awt.event.ActionEvent evt) {
-        this.enviarMensaje();
-
-    }
-
-
-
     /**
      * @param args the command line arguments
      */
     public static void main(String args[]) {
-        /* Create and display the form */
-        java.awt.EventQueue.invokeLater(new Runnable() {
-            public void run() {
-                new PrincipalCli().setVisible(true);
-            }
-        });
+        java.awt.EventQueue.invokeLater(() -> new PrincipalCli().setVisible(true));
     }
 
     // Variables declaration - do not modify
@@ -116,26 +128,19 @@ public class PrincipalCli extends JFrame {
 
 
     private void enviarMensaje() {
-        String ip = "127.0.0.1";
-        String mensaje = mensajeTxt.getText();
+        String mensaje = mensajeTxt.getText().trim();
         if (mensaje.isEmpty()){
             JOptionPane.showMessageDialog(this,"No hay mensaje para enviar");
             return ;
         }
-        DatagramPacket mensajeDG = MiDatagrama.crearDataG(ip, PORT, mensaje);
-        File f = new File("c:\\aca\\","elarchivo.*" );
         try {
-            DatagramSocket canal = new DatagramSocket();
-            canal.send(mensajeDG);
-            mensajesTxt.append("Mensaje enviado \n");
-
-
-        } catch (SocketException ex) {
-            Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
+            DatagramPacket paquete = MiDatagrama.crearDataG(
+                    "127.0.0.1", PORT_SERVIDOR, mensaje);
+            canal.send(paquete);        // reutiliza el mismo socket (mismo puerto)
+            mensajeTxt.setText("");     // limpiar campo tras enviar
         } catch (IOException ex) {
             Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
         }
-
-
     }
 }
+
