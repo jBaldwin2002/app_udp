@@ -89,33 +89,93 @@ public class PrincipalSrv extends JFrame {
                     if (!clientes.contains(origen)) {
                         clientes.add(origen);
                         log("Nuevo cliente registrado: " + origen);
+
+
+                    String aviso = "CLIENTE_NUEVO:" + dp.getAddress().getHostAddress()
+                            + ":" + dp.getPort();
+                    notificarATodos(socketudp, aviso);
+
+                    // Enviar al nuevo cliente la lista de clientes existentes
+                    for (InetSocketAddress c : clientes) {
+                        if (!c.equals(origen)) {
+                            String existente = "CLIENTE_NUEVO:" + c.getAddress().getHostAddress() + ":" + c.getPort();
+                            DatagramPacket p = MiDatagrama.crearDataG(dp.getAddress().getHostAddress(), dp.getPort(), existente);
+                            socketudp.send(p);
+                        }
                     }
-
-                    // 3. Extraer mensaje (solo los bytes usados)
-                    String mensaje = new String(dp.getData(), 0, dp.getLength());
-                    log("Recibido de " + origen + ": " + mensaje);
-
-                    // 4. Reenviar a TODOS los clientes registrados
-                    String broadcast = "[" + dp.getAddress().getHostAddress()
-                            + ":" + dp.getPort() + "] " + mensaje;
-
-                    for (InetSocketAddress cliente : clientes) {
-                        DatagramPacket salida = MiDatagrama.crearDataG(
-                                cliente.getAddress().getHostAddress(),
-                                cliente.getPort(),
-                                broadcast);
-                        socketudp.send(salida);
-                    }
-
                 }
 
-            } catch (SocketException ex) {
+
+                // 3. Extraer mensaje (solo los bytes usados)
+                    String mensaje = new String(dp.getData(), 0, dp.getLength());
+
+                if (mensaje.startsWith("CLIENTE_")) continue;
+
+                log("Recibido de " + origen + ": " + mensaje);
+
+                    // 4. Reenviar a TODOS los clientes registrados
+                if (mensaje.startsWith("@")) {
+                    // ── MENSAJE PRIVADO
+                    int espacioIdx = mensaje.indexOf(' ');
+                    if (espacioIdx > 1) {
+                        String destStr = mensaje.substring(1, espacioIdx);
+                        String textoPrivado = mensaje.substring(espacioIdx + 1);
+                        String[] partes = destStr.split(":");
+
+                        if (partes.length == 2) {
+                            try {
+                                InetAddress destIp = InetAddress.getByName(partes[0]);
+                                int destPort = Integer.parseInt(partes[1].trim());
+                                InetSocketAddress destAddr = new InetSocketAddress(destIp, destPort);
+
+                                if (clientes.contains(destAddr)) {
+                                    String msgPrivado = "[PRIVADO de " + dp.getAddress().getHostAddress() + ":" + dp.getPort() + "] " + textoPrivado;
+
+                                    DatagramPacket salida = MiDatagrama.crearDataG(destIp.getHostAddress(), destPort, msgPrivado);
+                                    socketudp.send(salida);
+
+                                    // Confirmacion al emisor
+                                    DatagramPacket confirm = MiDatagrama.crearDataG(dp.getAddress().getHostAddress(), dp.getPort(),
+                                            "[Al privado entregado a " + destStr + "]");
+                                    socketudp.send(confirm);
+
+                                    log("Privado enrutado: " + origen + " → " + destAddr);
+
+                                } else {
+                                    DatagramPacket err = MiDatagrama.crearDataG(dp.getAddress().getHostAddress(), dp.getPort(),
+                                            "[ERROR] El cliente " + destStr + " no esta conectado.");
+                                    socketudp.send(err);
+                                }
+
+                            } catch (NumberFormatException | UnknownHostException ex) {
+                                log("Direccion invalida: " + destStr);
+                            }
+                        }
+                    }
+
+                } else {
+                    String broadcast = "[" + dp.getAddress().getHostAddress() + ":" + dp.getPort() + "] " + mensaje;notificarATodos(socketudp, broadcast);
+                }
+            }
+
+        } catch (SocketException ex) {
                 Logger.getLogger(PrincipalSrv.class.getName()).log(Level.SEVERE, null, ex);
             } catch (IOException ex) {
                 Logger.getLogger(PrincipalSrv.class.getName()).log(Level.SEVERE, null, ex);
             }
         }).start();
     }
+
+private void notificarATodos(DatagramSocket socket, String mensaje) throws IOException {
+    for (InetSocketAddress cliente : clientes) {
+        DatagramPacket p = MiDatagrama.crearDataG(
+                cliente.getAddress().getHostAddress(),
+                cliente.getPort(),
+                mensaje);
+        socket.send(p);
+    }
+}
+
     private void log(String texto) {
         SwingUtilities.invokeLater(() -> mensajesTxt.append(texto + "\n"));
     }
@@ -124,8 +184,8 @@ public class PrincipalSrv extends JFrame {
         java.awt.EventQueue.invokeLater(() -> new PrincipalSrv().setVisible(true));
     }
 
-    private JButton    bIniciar;
-    private JLabel     jLabel1;
-    private JTextArea  mensajesTxt;
+    private JButton bIniciar;
+    private JLabel jLabel1;
+    private JTextArea mensajesTxt;
     private JScrollPane jScrollPane1;
 }

@@ -27,14 +27,15 @@ public class PrincipalCli extends JFrame {
         this.mensajesTxt.setEditable(false);
 
     try {
-        canal = new DatagramSocket(); // puerto aleatorio asignado por el SO
+        canal = new DatagramSocket();
+        this.setTitle("Cliente  —  Mi puerto: " + canal.getLocalPort());
         escucharRespuestas();
     } catch (SocketException ex) {
         Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
     }
 }
 
-/** Hilo que escucha los mensajes broadcast que reenvía el servidor */
+/** Hilo que escucha los mensajes broadcast que reenvia el servidor */
 private void escucharRespuestas() {
     new Thread(() -> {
         byte[] buf = new byte[1024];
@@ -43,9 +44,18 @@ private void escucharRespuestas() {
             try {
                 canal.receive(dp);
                 String msg = new String(dp.getData(), 0, dp.getLength());
-                // Mostrar en el área de mensajes de forma segura
-                SwingUtilities.invokeLater(() ->
-                        mensajesTxt.append(msg + "\n"));
+
+                if (msg.startsWith("CLIENTE_NUEVO:")) {
+                    String direccion = msg.substring("CLIENTE_NUEVO:".length()).trim();
+                    SwingUtilities.invokeLater(() -> agregarClienteAlCombo(direccion));
+                } else if (msg.startsWith("CLIENTE_DESCONECTADO:")) {
+                    String direccion = msg.substring("CLIENTE_DESCONECTADO:".length()).trim();
+                    SwingUtilities.invokeLater(() -> quitarClienteDelCombo(direccion));
+                } else {
+                    SwingUtilities.invokeLater(() -> mensajesTxt.append(msg + "\n"));
+                }
+
+
             } catch (IOException ex) {
                 Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
                 break;
@@ -53,6 +63,18 @@ private void escucharRespuestas() {
         }
     }).start();
 }
+
+
+    private void agregarClienteAlCombo(String direccion) {
+        for (int i = 0; i < comboDestino.getItemCount(); i++) {
+            if (comboDestino.getItemAt(i).equals(direccion)) return;
+        }
+        comboDestino.addItem(direccion);
+    }
+
+    private void quitarClienteDelCombo(String direccion) {
+        comboDestino.removeItem(direccion);
+    }
 
     /**
      * This method is called from within the constructor to initialize the form.
@@ -63,12 +85,13 @@ private void escucharRespuestas() {
     // <editor-fold defaultstate="collapsed" desc="Generated Code">
     private void initComponents() {
 
-        this.setTitle("Cliente ");
         jLabel1 = new JLabel();
+        jLabel2 = new JLabel();
+        jLabel3 = new JLabel();
         jScrollPane1 = new JScrollPane();
         mensajesTxt = new JTextArea();
         mensajeTxt = new JTextField();
-        jLabel2 = new JLabel();
+        comboDestino = new JComboBox<>();
         btEnviar = new JButton();
 
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
@@ -89,6 +112,12 @@ private void escucharRespuestas() {
 
         getContentPane().add(jScrollPane1);
         jScrollPane1.setBounds(30, 210, 410, 110);
+
+        comboDestino.addItem("-- Todos (broadcast) --");   // opción por defecto
+        comboDestino.setFont(new java.awt.Font("Verdana", 0, 12));
+        comboDestino.setToolTipText("Selecciona un cliente destino o broadcast");
+        getContentPane().add(comboDestino);
+        comboDestino.setBounds(105, 45, 330, 25);
 
         mensajeTxt.setFont(new java.awt.Font("Verdana", 0, 14)); // NOI18N
         getContentPane().add(mensajeTxt);
@@ -121,9 +150,11 @@ private void escucharRespuestas() {
     private JButton btEnviar;
     private JLabel jLabel1;
     private JLabel jLabel2;
+    private JLabel jLabel3;
     private JScrollPane jScrollPane1;
     private JTextArea mensajesTxt;
     private JTextField mensajeTxt;
+    private JComboBox<String> comboDestino;
     // End of variables declaration
 
 
@@ -133,11 +164,21 @@ private void escucharRespuestas() {
             JOptionPane.showMessageDialog(this,"No hay mensaje para enviar");
             return ;
         }
+
+        String seleccion = (String) comboDestino.getSelectedItem();
+
+        String mensajeFinal;
+        if (seleccion == null || seleccion.startsWith("--")) {
+            mensajeFinal = mensaje;
+        } else {
+            mensajeFinal = "@" + seleccion + " " + mensaje;
+        }
+
         try {
             DatagramPacket paquete = MiDatagrama.crearDataG(
-                    "127.0.0.1", PORT_SERVIDOR, mensaje);
-            canal.send(paquete);        // reutiliza el mismo socket (mismo puerto)
-            mensajeTxt.setText("");     // limpiar campo tras enviar
+                    "127.0.0.1", PORT_SERVIDOR, mensajeFinal);
+            canal.send(paquete); // reutiliza el mismo socket (mismo puerto)
+            mensajeTxt.setText(""); // limpiar campo tras enviar
         } catch (IOException ex) {
             Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
         }
