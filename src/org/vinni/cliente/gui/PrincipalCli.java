@@ -182,7 +182,7 @@ private void escucharRespuestas() {
                 DatagramPacket paquete = MiDatagrama.crearDataG(ip, puerto, msgFormateado);
                 canal.send(paquete);
 
-                mensajesTxt.append("[Yo -> " + seleccion + "] " + mensaje + "\n");
+                mensajesTxt.append("[ID -> " + seleccion + "] " + mensaje + "\n");
             }
 
             mensajeTxt.setText("");

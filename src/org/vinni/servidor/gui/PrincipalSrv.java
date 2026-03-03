@@ -18,7 +18,9 @@ public class PrincipalSrv extends JFrame {
     private final int PORT = 12345;
 
     private final CopyOnWriteArrayList<InetSocketAddress> clientes = new CopyOnWriteArrayList<>();
-
+    private final java.util.Map<String, java.util.Map<Integer, byte[]>> archivosEnTransito = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, Integer> totalChunksPorTransfer = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, String> destinoPorTransfer = new java.util.concurrent.ConcurrentHashMap<>();
     /**
      * Creates new form Principal1
      */
@@ -113,6 +115,12 @@ public class PrincipalSrv extends JFrame {
 
                 log("Recibido de " + origen + ": " + mensaje);
 
+                    // ── TRANSFERENCIA DE ARCHIVO
+                    if (mensaje.startsWith("FILE|")) {
+                        procesarChunkArchivo(socketudp, dp, mensaje, origen);
+                        continue;
+                    }
+
                     // 4. Reenviar a TODOS los clientes registrados
                 if (mensaje.startsWith("@")) {
                     // ── MENSAJE PRIVADO
@@ -182,6 +190,75 @@ private void notificarATodos(DatagramSocket socket, String mensaje) throws IOExc
 
     public static void main(String[] args) {
         java.awt.EventQueue.invokeLater(() -> new PrincipalSrv().setVisible(true));
+    }
+
+    private void procesarChunkArchivo(DatagramSocket socket, DatagramPacket dp, String mensaje, InetSocketAddress origen) throws IOException {
+
+        String[] partes = mensaje.split("\\|", 8);
+        if (partes.length < 8) return;
+
+        String transferId = partes[1];
+        String nombre = partes[2];
+        String ext = partes[3];
+        int total = Integer.parseInt(partes[4]);
+        int idx = Integer.parseInt(partes[5]);
+
+        String destino = partes[6];
+        byte[] datos = java.util.Base64.getDecoder().decode(partes[7]);
+
+        // Guardar chunk
+        archivosEnTransito.computeIfAbsent(transferId, k -> new java.util.concurrent.ConcurrentHashMap<>()).put(idx, datos);
+        totalChunksPorTransfer.put(transferId, total);
+        destinoPorTransfer.put(transferId, destino + "|" + origen);
+
+        log("Chunk " + idx + "/" + (total-1) + " recibido — transfer: " + transferId);
+
+
+        if (archivosEnTransito.get(transferId).size() == total) {
+            log("Archivo completo: " + nombre + "." + ext + " — reenviando...");
+            reenviarArchivo(socket, transferId, nombre, ext, destino, origen);
+
+            // Limpiar
+            archivosEnTransito.remove(transferId);
+            totalChunksPorTransfer.remove(transferId);
+            destinoPorTransfer.remove(transferId);
+        }
+    }
+
+    private void reenviarArchivo(DatagramSocket socket, String transferId, String nombre, String ext, String destino, InetSocketAddress remitente) throws IOException {
+
+        java.util.Map<Integer, byte[]> chunks = archivosEnTransito.get(transferId);
+        int total = totalChunksPorTransfer.get(transferId);
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        for (int i = 0; i < total; i++) baos.write(chunks.get(i));
+        byte[] archivoCompleto = baos.toByteArray();
+
+
+        int CHUNK = 512;
+        int totalReenv = (int) Math.ceil((double) archivoCompleto.length / CHUNK);
+        String remStr = remitente.getAddress().getHostAddress() + ":" + remitente.getPort();
+
+        for (int i = 0; i < totalReenv; i++) {
+            int desde = i * CHUNK;
+            int hasta = Math.min(desde + CHUNK, archivoCompleto.length);
+            byte[] fragmento = java.util.Arrays.copyOfRange(archivoCompleto, desde, hasta);
+            String b64 = java.util.Base64.getEncoder().encodeToString(fragmento);
+
+            String paquete = "FILE|" + transferId + "|" + nombre + "|" + ext
+                    + "|" + totalReenv + "|" + i + "|" + destino + "|" + remStr + "|" + b64;
+
+            if ("ALL".equals(destino)) {
+                notificarATodos(socket, paquete);
+            } else {
+                String[] p = destino.split(":");
+                InetAddress ip = InetAddress.getByName(p[0]);
+                int puerto = Integer.parseInt(p[1].trim());
+                DatagramPacket dp2 = MiDatagrama.crearDataG(ip.getHostAddress(), puerto, paquete);
+                socket.send(dp2);
+            }
+        }
+        log("Archivo " + nombre + "." + ext + " reenviado desde " + remStr
+                + " → " + (destino.equals("ALL") ? "TODOS" : destino));
     }
 
     private JButton bIniciar;
