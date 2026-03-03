@@ -160,25 +160,33 @@ private void escucharRespuestas() {
 
     private void enviarMensaje() {
         String mensaje = mensajeTxt.getText().trim();
-        if (mensaje.isEmpty()){
-            JOptionPane.showMessageDialog(this,"No hay mensaje para enviar");
-            return ;
+        if (mensaje.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "No hay mensaje para enviar");
+            return;
         }
 
         String seleccion = (String) comboDestino.getSelectedItem();
 
-        String mensajeFinal;
-        if (seleccion == null || seleccion.startsWith("--")) {
-            mensajeFinal = mensaje;
-        } else {
-            mensajeFinal = "@" + seleccion + " " + mensaje;
-        }
-
         try {
-            DatagramPacket paquete = MiDatagrama.crearDataG(
-                    "127.0.0.1", PORT_SERVIDOR, mensajeFinal);
-            canal.send(paquete); // reutiliza el mismo socket (mismo puerto)
-            mensajeTxt.setText(""); // limpiar campo tras enviar
+            if (seleccion == null || seleccion.startsWith("--")) {
+                DatagramPacket paquete = MiDatagrama.crearDataG("127.0.0.1", PORT_SERVIDOR, mensaje);
+                canal.send(paquete);
+
+            } else {
+                // PRIVADO
+                String[] partes = seleccion.split(":");
+                String ip = partes[0];
+                int puerto = Integer.parseInt(partes[1].trim());
+
+                String msgFormateado = "[DIRECTO de mi:" + canal.getLocalPort() + "] " + mensaje;
+                DatagramPacket paquete = MiDatagrama.crearDataG(ip, puerto, msgFormateado);
+                canal.send(paquete);
+
+                mensajesTxt.append("[Yo -> " + seleccion + "] " + mensaje + "\n");
+            }
+
+            mensajeTxt.setText("");
+
         } catch (IOException ex) {
             Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
         }
