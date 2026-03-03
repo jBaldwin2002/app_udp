@@ -258,7 +258,7 @@ private void notificarATodos(DatagramSocket socket, String mensaje) throws IOExc
             }
         }
         log("Archivo " + nombre + "." + ext + " reenviado desde " + remStr
-                + " → " + (destino.equals("ALL") ? "TODOS" : destino));
+                + " -> " + (destino.equals("ALL") ? "TODOS" : destino));
     }
 
     private JButton bIniciar;
