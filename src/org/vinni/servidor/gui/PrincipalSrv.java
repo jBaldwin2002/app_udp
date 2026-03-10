@@ -1,6 +1,5 @@
 package org.vinni.servidor.gui;
 
-
 import org.vinni.dto.MiDatagrama;
 
 import javax.swing.*;
@@ -21,6 +20,7 @@ public class PrincipalSrv extends JFrame {
     private final java.util.Map<String, java.util.Map<Integer, byte[]>> archivosEnTransito = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<String, Integer> totalChunksPorTransfer = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<String, String> destinoPorTransfer = new java.util.concurrent.ConcurrentHashMap<>();
+
     /**
      * Creates new form Principal1
      */
@@ -28,6 +28,7 @@ public class PrincipalSrv extends JFrame {
         initComponents();
         this.mensajesTxt.setEditable(false);
     }
+
     @SuppressWarnings("unchecked")
     // <editor-fold defaultstate="collapsed" desc="Generated Code">
     private void initComponents() {
@@ -57,7 +58,6 @@ public class PrincipalSrv extends JFrame {
         mensajesTxt.setRows(5);
 
         jScrollPane1.setViewportView(mensajesTxt);
-
         getContentPane().add(jScrollPane1);
         jScrollPane1.setBounds(20, 150, 500, 120);
 
@@ -70,12 +70,12 @@ public class PrincipalSrv extends JFrame {
      * @param args the command line arguments
      */
 
-    public void iniciar(){
-        mensajesTxt.append("Servidor UDP iniciado en el puerto"+PORT+"\n");
+    public void iniciar() {
+        mensajesTxt.append("Servidor UDP iniciado en el puerto " + PORT + "\n");
         bIniciar.setEnabled(false);
 
         new Thread(() -> {
-            try(DatagramSocket socketudp = new DatagramSocket(PORT)) {
+            try (DatagramSocket socketudp = new DatagramSocket(PORT)) {
 
                 byte[] buf = new byte[1024];
 
@@ -85,35 +85,40 @@ public class PrincipalSrv extends JFrame {
                     socketudp.receive(dp);
 
                     // 2. Registrar cliente si es nuevo
-                    InetSocketAddress origen = new InetSocketAddress(
-                            dp.getAddress(), dp.getPort());
+                    InetSocketAddress origen = new InetSocketAddress(dp.getAddress(), dp.getPort());
 
                     if (!clientes.contains(origen)) {
                         clientes.add(origen);
                         log("Nuevo cliente registrado: " + origen);
 
+                        String aviso = "CLIENTE_NUEVO:" + dp.getAddress().getHostAddress() + ":" + dp.getPort();
+                        notificarATodos(socketudp, aviso);
 
-                    String aviso = "CLIENTE_NUEVO:" + dp.getAddress().getHostAddress()
-                            + ":" + dp.getPort();
-                    notificarATodos(socketudp, aviso);
-
-                    // Enviar al nuevo cliente la lista de clientes existentes
-                    for (InetSocketAddress c : clientes) {
-                        if (!c.equals(origen)) {
-                            String existente = "CLIENTE_NUEVO:" + c.getAddress().getHostAddress() + ":" + c.getPort();
-                            DatagramPacket p = MiDatagrama.crearDataG(dp.getAddress().getHostAddress(), dp.getPort(), existente);
-                            socketudp.send(p);
+                        // Enviar al nuevo cliente la lista de clientes existentes
+                        for (InetSocketAddress c : clientes) {
+                            if (!c.equals(origen)) {
+                                String existente = "CLIENTE_NUEVO:" + c.getAddress().getHostAddress() + ":" + c.getPort();
+                                DatagramPacket p = MiDatagrama.crearDataG(dp.getAddress().getHostAddress(), dp.getPort(), existente);
+                                socketudp.send(p);
+                            }
                         }
                     }
-                }
 
-
-                // 3. Extraer mensaje (solo los bytes usados)
+                    // 3. Extraer mensaje (solo los bytes usados)
                     String mensaje = new String(dp.getData(), 0, dp.getLength());
 
-                if (mensaje.startsWith("CLIENTE_")) continue;
+                    if (mensaje.startsWith("CLIENTE_")) continue;
 
-                log("Recibido de " + origen + ": " + mensaje);
+                    // ── DESCONEXIÓN VOLUNTARIA
+                    if (mensaje.startsWith("DESCONECTAR:")) {
+                        clientes.remove(origen);
+                        String aviso = "CLIENTE_DESCONECTADO:" + origen.getAddress().getHostAddress() + ":" + origen.getPort();
+                        notificarATodos(socketudp, aviso);
+                        log("Cliente desconectado: " + origen);
+                        continue;
+                    }
+
+                    log("Recibido de " + origen + ": " + mensaje);
 
                     // ── TRANSFERENCIA DE ARCHIVO
                     if (mensaje.startsWith("FILE|")) {
@@ -121,52 +126,51 @@ public class PrincipalSrv extends JFrame {
                         continue;
                     }
 
-                    // 4. Reenviar a TODOS los clientes registrados
-                if (mensaje.startsWith("@")) {
                     // ── MENSAJE PRIVADO
-                    int espacioIdx = mensaje.indexOf(' ');
-                    if (espacioIdx > 1) {
-                        String destStr = mensaje.substring(1, espacioIdx);
-                        String textoPrivado = mensaje.substring(espacioIdx + 1);
-                        String[] partes = destStr.split(":");
+                    if (mensaje.startsWith("@")) {
+                        int espacioIdx = mensaje.indexOf(' ');
+                        if (espacioIdx > 1) {
+                            String destStr = mensaje.substring(1, espacioIdx);
+                            String textoPrivado = mensaje.substring(espacioIdx + 1);
+                            String[] partes = destStr.split(":");
 
-                        if (partes.length == 2) {
-                            try {
-                                InetAddress destIp = InetAddress.getByName(partes[0]);
-                                int destPort = Integer.parseInt(partes[1].trim());
-                                InetSocketAddress destAddr = new InetSocketAddress(destIp, destPort);
+                            if (partes.length == 2) {
+                                try {
+                                    InetAddress destIp = InetAddress.getByName(partes[0]);
+                                    int destPort = Integer.parseInt(partes[1].trim());
+                                    InetSocketAddress destAddr = new InetSocketAddress(destIp, destPort);
 
-                                if (clientes.contains(destAddr)) {
-                                    String msgPrivado = "[PRIVADO de " + dp.getAddress().getHostAddress() + ":" + dp.getPort() + "] " + textoPrivado;
+                                    if (clientes.contains(destAddr)) {
+                                        String msgPrivado = "[PRIVADO de " + dp.getAddress().getHostAddress() + ":" + dp.getPort() + "] " + textoPrivado;
+                                        DatagramPacket salida = MiDatagrama.crearDataG(destIp.getHostAddress(), destPort, msgPrivado);
+                                        socketudp.send(salida);
 
-                                    DatagramPacket salida = MiDatagrama.crearDataG(destIp.getHostAddress(), destPort, msgPrivado);
-                                    socketudp.send(salida);
+                                        // Confirmación al emisor
+                                        DatagramPacket confirm = MiDatagrama.crearDataG(dp.getAddress().getHostAddress(), dp.getPort(),
+                                                "[Al privado entregado a " + destStr + "]");
+                                        socketudp.send(confirm);
 
-                                    // Confirmacion al emisor
-                                    DatagramPacket confirm = MiDatagrama.crearDataG(dp.getAddress().getHostAddress(), dp.getPort(),
-                                            "[Al privado entregado a " + destStr + "]");
-                                    socketudp.send(confirm);
+                                        log("Privado enrutado: " + origen + " → " + destAddr);
+                                    } else {
+                                        DatagramPacket err = MiDatagrama.crearDataG(dp.getAddress().getHostAddress(), dp.getPort(),
+                                                "[ERROR] El cliente " + destStr + " no esta conectado.");
+                                        socketudp.send(err);
+                                    }
 
-                                    log("Privado enrutado: " + origen + " → " + destAddr);
-
-                                } else {
-                                    DatagramPacket err = MiDatagrama.crearDataG(dp.getAddress().getHostAddress(), dp.getPort(),
-                                            "[ERROR] El cliente " + destStr + " no esta conectado.");
-                                    socketudp.send(err);
+                                } catch (NumberFormatException | UnknownHostException ex) {
+                                    log("Dirección inválida: " + destStr);
                                 }
-
-                            } catch (NumberFormatException | UnknownHostException ex) {
-                                log("Direccion invalida: " + destStr);
                             }
                         }
+
+                    } else {
+                        // ── BROADCAST
+                        String broadcast = "[" + dp.getAddress().getHostAddress() + ":" + dp.getPort() + "] " + mensaje;
+                        notificarATodos(socketudp, broadcast);
                     }
-
-                } else {
-                    String broadcast = "[" + dp.getAddress().getHostAddress() + ":" + dp.getPort() + "] " + mensaje;notificarATodos(socketudp, broadcast);
                 }
-            }
 
-        } catch (SocketException ex) {
+            } catch (SocketException ex) {
                 Logger.getLogger(PrincipalSrv.class.getName()).log(Level.SEVERE, null, ex);
             } catch (IOException ex) {
                 Logger.getLogger(PrincipalSrv.class.getName()).log(Level.SEVERE, null, ex);
@@ -174,29 +178,31 @@ public class PrincipalSrv extends JFrame {
         }).start();
     }
 
-private void notificarATodos(DatagramSocket socket, String mensaje) throws IOException {
-    java.util.List<InetSocketAddress> caidos = new java.util.ArrayList<>();
+
+    private void notificarATodos(DatagramSocket socket, String mensaje) throws IOException {
+        java.util.List<InetSocketAddress> caidos = new java.util.ArrayList<>();
+
         for (InetSocketAddress cliente : clientes) {
-            try{
-        DatagramPacket p = MiDatagrama.crearDataG(
-                cliente.getAddress().getHostAddress(),
-                cliente.getPort(), mensaje);
-        socket.send(p);
-    } catch (IOException ex){
-            log("Cliente se desconecto: " + cliente);
-            caidos.add(cliente);
+            try {
+                DatagramPacket p = MiDatagrama.crearDataG(
+                        cliente.getAddress().getHostAddress(),
+                        cliente.getPort(),
+                        mensaje);
+                socket.send(p);
+            } catch (IOException ex) {
+                log("Cliente caído detectado: " + cliente);
+                caidos.add(cliente);
             }
         }
 
-    // Eliminar caídos y notificar al resto
-    for (InetSocketAddress caido : caidos) {
-        clientes.remove(caido);
-        String aviso = "CLIENTE_DESCONECTADO:" + caido.getAddress().getHostAddress() + ":" + caido.getPort();
-        notificarATodos(socket, aviso);
-        log("Cliente eliminado: " + caido);
+        // Eliminar caídos y notificar al resto
+        for (InetSocketAddress caido : caidos) {
+            clientes.remove(caido);
+            String aviso = "CLIENTE_DESCONECTADO:" + caido.getAddress().getHostAddress() + ":" + caido.getPort();
+            notificarATodos(socket, aviso);
+            log("Cliente eliminado: " + caido);
+        }
     }
-}
-
 
     private void log(String texto) {
         SwingUtilities.invokeLater(() -> mensajesTxt.append(texto + "\n"));
@@ -216,7 +222,6 @@ private void notificarATodos(DatagramSocket socket, String mensaje) throws IOExc
         String ext = partes[3];
         int total = Integer.parseInt(partes[4]);
         int idx = Integer.parseInt(partes[5]);
-
         String destino = partes[6];
         byte[] datos = java.util.Base64.getDecoder().decode(partes[7]);
 
@@ -225,8 +230,7 @@ private void notificarATodos(DatagramSocket socket, String mensaje) throws IOExc
         totalChunksPorTransfer.put(transferId, total);
         destinoPorTransfer.put(transferId, destino + "|" + origen);
 
-        log("Chunk " + idx + "/" + (total-1) + " recibido — transfer: " + transferId);
-
+        log("Chunk " + idx + "/" + (total - 1) + " recibido — transfer: " + transferId);
 
         if (archivosEnTransito.get(transferId).size() == total) {
             log("Archivo completo: " + nombre + "." + ext + " — reenviando...");
@@ -246,7 +250,6 @@ private void notificarATodos(DatagramSocket socket, String mensaje) throws IOExc
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
         for (int i = 0; i < total; i++) baos.write(chunks.get(i));
         byte[] archivoCompleto = baos.toByteArray();
-
 
         int CHUNK = 512;
         int totalReenv = (int) Math.ceil((double) archivoCompleto.length / CHUNK);
@@ -271,12 +274,15 @@ private void notificarATodos(DatagramSocket socket, String mensaje) throws IOExc
                 socket.send(dp2);
             }
         }
+
         log("Archivo " + nombre + "." + ext + " reenviado desde " + remStr
-                + " -> " + (destino.equals("ALL") ? "TODOS" : destino));
+                + " -> " + ("ALL".equals(destino) ? "TODOS" : destino));
     }
 
+    // Variables declaration
     private JButton bIniciar;
     private JLabel jLabel1;
     private JTextArea mensajesTxt;
     private JScrollPane jScrollPane1;
+    // End of variables declaration
 }

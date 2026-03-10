@@ -33,14 +33,27 @@ public class PrincipalCli extends JFrame {
         this.btEnviar.setEnabled(true);
         this.mensajesTxt.setEditable(false);
 
-    try {
-        canal = new DatagramSocket();
-        this.setTitle("Cliente  —  Mi puerto: " + canal.getLocalPort());
-        escucharRespuestas();
-    } catch (SocketException ex) {
-        Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
+        try {
+            canal = new DatagramSocket();
+            this.setTitle("Cliente  —  Mi puerto: " + canal.getLocalPort());
+            escucharRespuestas();
+        } catch (SocketException ex) {
+            Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+
+
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                try {
+                    String despedida = "DESCONECTAR:" + canal.getLocalPort();
+                    DatagramPacket p = MiDatagrama.crearDataG("127.0.0.1", PORT_SERVIDOR, despedida);
+                    canal.send(p);
+                } catch (IOException ex) { /* ignorar */ }
+            }
+        });
     }
-}
 
 /** Hilo que escucha los mensajes broadcast que reenvia el servidor */
 private void escucharRespuestas() {
@@ -63,7 +76,6 @@ private void escucharRespuestas() {
                 } else {
                     SwingUtilities.invokeLater(() -> mensajesTxt.append(msg + "\n"));
                 }
-
 
             } catch (IOException ex) {
                 Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
@@ -113,8 +125,6 @@ private void escucharRespuestas() {
 
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         getContentPane().setLayout(null);
-
-
 
         jLabel1.setFont(new java.awt.Font("Tahoma", 1, 14)); // NOI18N
         jLabel1.setForeground(new java.awt.Color(204, 0, 0));
@@ -257,7 +267,6 @@ private void escucharRespuestas() {
         recibidos.computeIfAbsent(transferId, k -> new java.util.concurrent.ConcurrentHashMap<>()).put(idx, datos);
         totalesRecibidos.put(transferId, total);
 
-        // Si ya llegaron todos los pedazos de este archivo
         if (recibidos.get(transferId).size() == total) {
             try {
                 java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
@@ -266,7 +275,6 @@ private void escucharRespuestas() {
 
                 recibidos.remove(transferId);
                 totalesRecibidos.remove(transferId);
-
 
                 SwingUtilities.invokeLater(() -> {
                     String nombreArchivo = nombre + (ext.isEmpty() ? "" : "." + ext);
@@ -297,19 +305,6 @@ private void escucharRespuestas() {
         }
     }
 
-    // Variables declaration - do not modify
-    private JButton btEnviarArchivo;
-    private JButton btEnviar;
-    private JLabel jLabel1;
-    private JLabel jLabel2;
-    private JLabel jLabel3;
-    private JScrollPane jScrollPane1;
-    private JTextArea mensajesTxt;
-    private JTextField mensajeTxt;
-    private JComboBox<String> comboDestino;
-    // End of variables declaration
-
-
     private void enviarMensaje() {
         String mensaje = mensajeTxt.getText().trim();
         if (mensaje.isEmpty()) {
@@ -323,7 +318,6 @@ private void escucharRespuestas() {
             if (seleccion == null || seleccion.startsWith("--")) {
                 DatagramPacket paquete = MiDatagrama.crearDataG("127.0.0.1", PORT_SERVIDOR, mensaje);
                 canal.send(paquete);
-
             } else {
                 // PRIVADO
                 String[] partes = seleccion.split(":");
@@ -343,5 +337,18 @@ private void escucharRespuestas() {
             Logger.getLogger(PrincipalCli.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
+
+    // Variables declaration - do not modify
+    private JButton btEnviarArchivo;
+    private JButton btEnviar;
+    private JLabel jLabel1;
+    private JLabel jLabel2;
+    private JLabel jLabel3;
+    private JScrollPane jScrollPane1;
+    private JTextArea mensajesTxt;
+    private JTextField mensajeTxt;
+    private JComboBox<String> comboDestino;
+    // End of variables declaration
 }
 
+//vlhkbkbv aca 1 2 3
