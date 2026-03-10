@@ -175,14 +175,28 @@ public class PrincipalSrv extends JFrame {
     }
 
 private void notificarATodos(DatagramSocket socket, String mensaje) throws IOException {
-    for (InetSocketAddress cliente : clientes) {
+    java.util.List<InetSocketAddress> caidos = new java.util.ArrayList<>();
+        for (InetSocketAddress cliente : clientes) {
+            try{
         DatagramPacket p = MiDatagrama.crearDataG(
                 cliente.getAddress().getHostAddress(),
-                cliente.getPort(),
-                mensaje);
+                cliente.getPort(), mensaje);
         socket.send(p);
+    } catch (IOException ex){
+            log("Cliente se desconecto: " + cliente);
+            caidos.add(cliente);
+            }
+        }
+
+    // Eliminar caídos y notificar al resto
+    for (InetSocketAddress caido : caidos) {
+        clientes.remove(caido);
+        String aviso = "CLIENTE_DESCONECTADO:" + caido.getAddress().getHostAddress() + ":" + caido.getPort();
+        notificarATodos(socket, aviso);
+        log("Cliente eliminado: " + caido);
     }
 }
+
 
     private void log(String texto) {
         SwingUtilities.invokeLater(() -> mensajesTxt.append(texto + "\n"));

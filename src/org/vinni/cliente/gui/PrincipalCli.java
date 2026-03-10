@@ -75,6 +75,9 @@ private void escucharRespuestas() {
 
 
     private void agregarClienteAlCombo(String direccion) {
+        String propio = "127.0.0.1:" + canal.getLocalPort();
+        if (direccion.equals(propio)) return;
+
         for (int i = 0; i < comboDestino.getItemCount(); i++) {
             if (comboDestino.getItemAt(i).equals(direccion)) return;
         }
